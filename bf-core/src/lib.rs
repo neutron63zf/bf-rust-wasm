@@ -1,3 +1,5 @@
+pub mod core;
+
 pub fn sample() {
     println!("sample")
 }
