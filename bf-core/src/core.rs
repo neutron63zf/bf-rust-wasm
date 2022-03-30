@@ -82,25 +82,73 @@ pub enum Operation {
 }
 
 // 命令セットの列がプログラム
-pub struct Program(Vec<Operation>);
+pub struct Program {
+    // プログラムでもまた、indexを持たずに現在のOperationを持つようにする
+    pub before: Vec<Operation>,
+    pub current: Option<Operation>,
+    pub after: Vec<Operation>,
+}
+
+enum ProgramPointerMove {
+    Next,
+    Prev,
+}
+
+impl Program {
+    fn from_operations(operations: Vec<Operation>) -> Self {
+        if let Some((first, operations)) = operations.split_first() {
+            return Self {
+                before: vec![],
+                current: Some(*first),
+                after: operations.to_vec(),
+            };
+        }
+        Self {
+            before: vec![],
+            current: None,
+            after: vec![],
+        }
+    }
+    fn move_pointer(&mut self, instruction: ProgramPointerMove) {
+        match instruction {
+            ProgramPointerMove::Next => {
+                if self.current.is_some() {
+                    self.before.push(self.current.unwrap());
+                }
+                self.current = self.after.pop();
+            }
+            ProgramPointerMove::Prev => {
+                if self.current.is_some() {
+                    self.after.push(self.current.unwrap());
+                }
+                self.current = self.before.pop();
+            }
+        }
+    }
+}
 
 // 本当はOpen, Closeの命令に対応するような入れ子構造になったほうやつもあったほうがいい気がするがとりあえずこれで
 
 // 現在のポインタの指す値が与えられたら次の命令は計算できるのでこれで十分
 pub struct Analyzer {
     pub program: Program,
-    pub index: usize,
+    open_count: usize,
+    close_count: usize,
 }
 
 impl Analyzer {
     pub fn initialize(program: Program) -> Self {
-        Self { program, index: 0 }
+        Self {
+            program,
+            open_count: 0,
+            close_count: 0,
+        }
     }
     // 次の命令を計算するやつ
     fn next(&mut self, cell: ValueCell) -> Option<Operation> {
         // 次の命令を見てみる
-        self.index += 1;
-        let next_operation = self.program.0.get(self.index);
+        self.program.move_pointer(ProgramPointerMove::Next);
+        let next_operation = self.program.current;
         match next_operation {
             // 次の命令がないときはNoneを返す
             None => None,
@@ -113,8 +161,8 @@ impl Analyzer {
                 let mut close_count = 0;
                 // 対応するOpenまで移動する
                 while {
-                    self.index -= 1;
-                    let before_op = self.program.0.get(self.index);
+                    self.program.move_pointer(ProgramPointerMove::Prev);
+                    let before_op = self.program.current;
                     let is_end = match before_op {
                         // 本来は不正なbfプログラムなのだが、即座にtrueにするだけで許す
                         None => true,
@@ -149,8 +197,8 @@ impl Analyzer {
                 let mut open_count = 0;
                 // 対応するCloseまで移動する
                 while {
-                    self.index += 1;
-                    let next_op = self.program.0.get(self.index);
+                    self.program.move_pointer(ProgramPointerMove::Next);
+                    let next_op = self.program.current;
                     let is_end = match next_op {
                         // 本来は不正なbfプログラムなのだが、即座にtrueにするだけで許す
                         None => true,
@@ -176,7 +224,7 @@ impl Analyzer {
                 // 次を読む
                 self.next(cell)
             }
-            Some(op) => Some(*op),
+            Some(op) => Some(op),
         }
     }
 }
