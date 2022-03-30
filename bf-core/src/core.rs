@@ -139,7 +139,7 @@ enum AnalyzerPointerJump {
 // 現在のポインタの指す値が与えられたら次の命令は計算できるのでこれで十分
 pub struct Analyzer {
     pub program: Program,
-    pair_count: usize,
+    pair_count: Vec<()>,
     jump_type: Option<AnalyzerPointerJump>,
 }
 
@@ -147,19 +147,19 @@ impl Analyzer {
     pub fn initialize(program: Program) -> Self {
         Self {
             program,
-            pair_count: 0,
+            pair_count: vec![],
             jump_type: None,
         }
     }
     fn encountered_target_operation(&mut self) {
-        if self.pair_count == 0 {
+        if self.pair_count.is_empty() {
             self.jump_type = None;
         } else {
-            self.pair_count -= 1;
+            self.pair_count.pop();
         }
     }
     fn encountered_opposite_operation(&mut self) {
-        self.pair_count += 1;
+        self.pair_count.push(());
     }
     // 次の命令を計算するが、ジャンプ中はNoneを返す
     pub fn next(&mut self, cell: ValueCell) -> Option<Operation> {
