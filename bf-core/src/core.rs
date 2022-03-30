@@ -1,7 +1,7 @@
 // メモリセル
 // 一般的bf
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct ValueCell(u8);
+struct ValueCell(u8);
 
 enum ValueCellOperation {
     ShiftR,
@@ -34,11 +34,11 @@ impl ValueCell {
 
 // データメモリ
 #[derive(Default, Debug)]
-pub struct Memory {
+struct Memory {
     // ポインタの位置を数字で持ちたくないのでこうなる
     before: Vec<ValueCell>, // ポインタの前のメモリセル
     after: Vec<ValueCell>,  // ポインタの後のメモリセル
-    pub current: ValueCell, // 現在のポインタの指すメモリセル
+    current: ValueCell,     // 現在のポインタの指すメモリセル
 }
 
 enum MemoryPointerMove {
@@ -67,7 +67,7 @@ impl Memory {
 
 // 命令セット
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-pub enum Operation {
+enum Operation {
     PInc,   // ポインタをインクリメント（右に一つずらす）
     PDec,   // ポインタをデクリメント（左に一つずらす）
     VInc,   // データをインクリメント
@@ -82,11 +82,11 @@ pub enum Operation {
 }
 
 // 命令セットの列がプログラム
-pub struct Program {
+struct Program {
     // プログラムでもまた、indexを持たずに現在のOperationを持つようにする
-    pub before: Vec<Operation>,
-    pub current: Option<Operation>,
-    pub after: Vec<Operation>,
+    before: Vec<Operation>,
+    current: Option<Operation>,
+    after: Vec<Operation>,
 }
 
 enum ProgramPointerMove {
@@ -137,14 +137,14 @@ enum AnalyzerPointerJump {
 }
 
 // 現在のポインタの指す値が与えられたら次の命令は計算できるのでこれで十分
-pub struct Analyzer {
-    pub program: Program,
+struct Analyzer {
+    program: Program,
     pair_count: Vec<()>,
     jump_type: Option<AnalyzerPointerJump>,
 }
 
 impl Analyzer {
-    pub fn initialize(program: Program) -> Self {
+    fn initialize(program: Program) -> Self {
         Self {
             program,
             pair_count: vec![],
@@ -162,7 +162,7 @@ impl Analyzer {
         self.pair_count.push(());
     }
     // 次の命令を計算するが、ジャンプ中はNoneを返す
-    pub fn next(&mut self, cell: ValueCell) -> Option<Operation> {
+    fn next(&mut self, cell: ValueCell) -> Option<Operation> {
         // openに向かって進んでいるときはポインタは左に動かす
         let next_move = match self.jump_type {
             Some(AnalyzerPointerJump::ToOpen) => ProgramPointerMove::Prev,
@@ -215,9 +215,9 @@ impl Analyzer {
     }
 }
 
-pub struct Interpreter {
-    pub analyzer: Analyzer,
-    pub memory: Memory,
+struct Interpreter {
+    analyzer: Analyzer,
+    memory: Memory,
 }
 
 impl Interpreter {
