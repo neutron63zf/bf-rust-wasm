@@ -97,10 +97,12 @@ enum ProgramPointerMove {
 impl Program {
     fn from_operations(operations: Vec<Operation>) -> Self {
         if let Some((first, operations)) = operations.split_first() {
+            let mut operations = operations.to_vec();
+            operations.reverse();
             return Self {
                 before: vec![],
                 current: Some(*first),
-                after: operations.to_vec(),
+                after: operations,
             };
         }
         Self {
@@ -129,102 +131,86 @@ impl Program {
 
 // 本当はOpen, Closeの命令に対応するような入れ子構造になったほうやつもあったほうがいい気がするがとりあえずこれで
 
+enum AnalyzerPointerJump {
+    ToOpen,
+    ToClose,
+}
+
 // 現在のポインタの指す値が与えられたら次の命令は計算できるのでこれで十分
 pub struct Analyzer {
     pub program: Program,
-    open_count: usize,
-    close_count: usize,
+    pair_count: usize,
+    jump_type: Option<AnalyzerPointerJump>,
 }
 
 impl Analyzer {
     pub fn initialize(program: Program) -> Self {
         Self {
             program,
-            open_count: 0,
-            close_count: 0,
+            pair_count: 0,
+            jump_type: None,
         }
     }
-    // 次の命令を計算するやつ
-    fn next(&mut self, cell: ValueCell) -> Option<Operation> {
-        // 次の命令を見てみる
-        self.program.move_pointer(ProgramPointerMove::Next);
+    fn encountered_target_operation(&mut self) {
+        if self.pair_count == 0 {
+            self.jump_type = None;
+        } else {
+            self.pair_count -= 1;
+        }
+    }
+    fn encountered_opposite_operation(&mut self) {
+        self.pair_count += 1;
+    }
+    // 次の命令を計算するが、ジャンプ中はNoneを返す
+    pub fn next(&mut self, cell: ValueCell) -> Option<Operation> {
+        // openに向かって進んでいるときはポインタは左に動かす
+        let next_move = match self.jump_type {
+            Some(AnalyzerPointerJump::ToOpen) => ProgramPointerMove::Prev,
+            _ => ProgramPointerMove::Next,
+        };
+        // ポインタを動かして、命令を読む
+        self.program.move_pointer(next_move);
         let next_operation = self.program.current;
-        match next_operation {
-            // 次の命令がないときはNoneを返す
-            None => None,
-            // 対応するOpenに移動するか、次に進むか
-            Some(Operation::Close) => {
-                // cellがゼロの場合は次のに進んで良い
+        let current_jump_type = &self.jump_type;
+        // 命令に応じて移動状態を変化させる
+        match (next_operation, current_jump_type) {
+            // 求めているものに遭遇したとき
+            (Some(Operation::Open), Some(AnalyzerPointerJump::ToOpen)) => {
+                self.encountered_target_operation();
+                None
+            }
+            (Some(Operation::Close), Some(AnalyzerPointerJump::ToClose)) => {
+                self.encountered_target_operation();
+                None
+            }
+            // 求めているものの逆に遭遇したとき
+            (Some(Operation::Close), Some(AnalyzerPointerJump::ToOpen)) => {
+                self.encountered_opposite_operation();
+                None
+            }
+            (Some(Operation::Open), Some(AnalyzerPointerJump::ToClose)) => {
+                self.encountered_opposite_operation();
+                None
+            }
+            // 普通にプログラムを実行していてOpen, Closeに遭遇したとき
+            (Some(Operation::Open), None) => {
+                // セルが0のときだけCloseに向かって飛ぶ
                 if cell.is_zero() {
-                    return self.next(cell);
+                    self.jump_type = Some(AnalyzerPointerJump::ToClose);
                 }
-                let mut close_count = 0;
-                // 対応するOpenまで移動する
-                while {
-                    self.program.move_pointer(ProgramPointerMove::Prev);
-                    let before_op = self.program.current;
-                    let is_end = match before_op {
-                        // 本来は不正なbfプログラムなのだが、即座にtrueにするだけで許す
-                        None => true,
-                        // これがOpenならば対応してるOpenかどうかをチェック
-                        Some(Operation::Open) => {
-                            if close_count == 0 {
-                                true
-                            } else {
-                                close_count -= 1;
-                                false
-                            }
-                        }
-                        // Closeならまだ続きを読む
-                        Some(Operation::Close) => {
-                            close_count += 1;
-                            false
-                        }
-                        _ => false,
-                    };
-                    !is_end
-                } {}
-                // 対応するOpenに移動したあとの状態
-                // 次を読む
-                self.next(cell)
+                None
             }
-            // 対応するCloseの後まで移動するか、次を読むか
-            Some(Operation::Open) => {
-                // cellが0でない場合は次に進む
+            (Some(Operation::Close), None) => {
+                // セルが0でないときだけOpenに向かって飛ぶ
                 if !cell.is_zero() {
-                    return self.next(cell);
-                };
-                let mut open_count = 0;
-                // 対応するCloseまで移動する
-                while {
-                    self.program.move_pointer(ProgramPointerMove::Next);
-                    let next_op = self.program.current;
-                    let is_end = match next_op {
-                        // 本来は不正なbfプログラムなのだが、即座にtrueにするだけで許す
-                        None => true,
-                        // これがCloseならば対応してるCloseかどうかをチェック
-                        Some(Operation::Close) => {
-                            if open_count == 0 {
-                                true
-                            } else {
-                                open_count -= 1;
-                                false
-                            }
-                        }
-                        // Openならまだ続きを読む
-                        Some(Operation::Open) => {
-                            open_count += 1;
-                            false
-                        }
-                        _ => false,
-                    };
-                    !is_end
-                } {}
-                // 対応するCloseに移動したあとの状態
-                // 次を読む
-                self.next(cell)
+                    self.jump_type = Some(AnalyzerPointerJump::ToOpen);
+                }
+                None
             }
-            Some(op) => Some(op),
+            // 移動中だったら命令はなし
+            (_, Some(_)) => None,
+            // 移動中でないときに普通の命令に遭遇したらそれを返す
+            (_, None) => next_operation,
         }
     }
 }
