@@ -1,6 +1,6 @@
 // メモリセル
 // 一般的bf
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
 struct ValueCell(u8);
 
 enum ValueCellOperation {
@@ -33,7 +33,7 @@ impl ValueCell {
 }
 
 // データメモリ
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq, Eq)]
 struct Memory {
     // ポインタの位置を数字で持ちたくないのでこうなる
     before: Vec<ValueCell>, // ポインタの前のメモリセル
@@ -82,6 +82,7 @@ enum Operation {
 }
 
 // 命令セットの列がプログラム
+#[derive(Debug, PartialEq, Eq)]
 struct Program {
     // プログラムでもまた、indexを持たずに現在のOperationを持つようにする
     before: Vec<Operation>,
@@ -130,13 +131,14 @@ impl Program {
 }
 
 // 本当はOpen, Closeの命令に対応するような入れ子構造になったほうやつもあったほうがいい気がするがとりあえずこれで
-
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum AnalyzerPointerJump {
     ToOpen,
     ToClose,
 }
 
 // 現在のポインタの指す値が与えられたら次の命令は計算できるのでこれで十分
+#[derive(Debug, PartialEq, Eq)]
 struct Analyzer {
     program: Program,
     pair_count: Vec<()>,
@@ -162,7 +164,7 @@ impl Analyzer {
         self.pair_count.push(());
     }
     // 次の命令を計算するが、ジャンプ中はNoneを返す
-    fn next(&mut self, cell: ValueCell) -> Option<Operation> {
+    fn next(&mut self, cell: &ValueCell) -> Option<Operation> {
         // openに向かって進んでいるときはポインタは左に動かす
         let next_move = match self.jump_type {
             Some(AnalyzerPointerJump::ToOpen) => ProgramPointerMove::Prev,
@@ -215,6 +217,7 @@ impl Analyzer {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Interpreter {
     analyzer: Analyzer,
     memory: Memory,
@@ -222,6 +225,47 @@ struct Interpreter {
 
 impl Interpreter {
     fn next(&mut self, input: Option<ValueCell>) -> Option<ValueCell> {
-        todo!()
+        let current_cell = &self.memory.current;
+        let next_operation = self.analyzer.next(current_cell);
+        match next_operation {
+            None => None,
+            // 入出力
+            Some(Operation::Input) => {
+                self.memory.current = input.unwrap_or_default();
+                None
+            }
+            Some(Operation::Output) => Some(self.memory.current),
+            // データ操作
+            Some(Operation::VInc) => {
+                self.memory
+                    .current
+                    .value_change(ValueCellOperation::Increment);
+                None
+            }
+            Some(Operation::VDec) => {
+                self.memory
+                    .current
+                    .value_change(ValueCellOperation::Decrement);
+                None
+            }
+            Some(Operation::VShiftL) => {
+                self.memory.current.value_change(ValueCellOperation::ShiftL);
+                None
+            }
+            Some(Operation::VShiftR) => {
+                self.memory.current.value_change(ValueCellOperation::ShiftR);
+                None
+            }
+            // ポインタ操作
+            Some(Operation::PInc) => {
+                self.memory.move_pointer(MemoryPointerMove::Right);
+                None
+            }
+            Some(Operation::PDec) => {
+                self.memory.move_pointer(MemoryPointerMove::Left);
+                None
+            }
+            _ => None,
+        }
     }
 }
